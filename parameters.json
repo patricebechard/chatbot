@@ -1,0 +1,11 @@
+{
+	"cell_type": "GRU",
+	"hidden_size": 1024,
+	"n_layers": 1,
+	"attn_status": false,
+	"teacher_forcing_ratio": 1.0,
+	"dropout": 0.0,
+	"learning_rate": 0.01,
+	"max_length": 30,
+	"bidirectional": false
+}
