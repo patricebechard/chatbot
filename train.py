@@ -48,6 +48,8 @@ def trainModel(n_iters=100000, teacher_forcing_ratio=0., print_every=1000,
             input_variable = input_variable.cuda()
             target_variable = target_variable.cuda()
 
+        print(input_variable)
+
         loss = trainIter(input_variable, target_variable, encoder, decoder,
                      encoder_optimizer, decoder_optimizer, criterion,
                      max_length=max_length, teacher_forcing_ratio=teacher_forcing_ratio)
