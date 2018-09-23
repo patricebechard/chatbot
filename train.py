@@ -1,142 +1,92 @@
-# Loading custom modules
-import model
-import preprocessing
-import utils
-from utils import USE_CUDA
-from model import loadModel
-from preprocessing import loadDataset
-from preprocessing import MAX_LENGTH
-from preprocessing import BOS_TOKEN, EOS_TOKEN, OOV_TOKEN
-from preprocessing import BOS_TOKEN_id, EOS_TOKEN_id, OOV_TOKEN_id
-
-# Loading Pytorch modules
 import torch
 from torch import nn
 from torch import optim
-import torch.functional as F
-from torch.autograd import Variable
 
-import random
+from utils import device
+from models.seq2seq import Seq2Seq
 
-# Load other modules
-import time
+def train(model, dataset, n_epochs=5, lr=1e-4, print_every=100,
+          save_model=True):
+    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    loss_plot = []
+    
+#     for epoch in range(1, n_epochs + 1):
+    epoch = 0
+    while True:
+        epoch += 1
+        
+        prev_mean_epoch_loss = 0
+        mean_epoch_loss = 0
+        
+#         for batch_idx, (inputs, targets) in enumerate(dataloader):
+        for batch_idx, pair in enumerate(dataset):
+        
+            inputs = torch.LongTensor(pair['input']).unsqueeze(-1).to(device)
+            targets = torch.LongTensor(pair['target']).unsqueeze(-1).to(device)
 
-def trainModel(n_iters=100000, teacher_forcing_ratio=0., print_every=1000,
-			   plot_every=100, learning_rate=0.01, max_length=MAX_LENGTH):
+            optimizer.zero_grad()
+            
+            outputs, prediction = model(inputs, targets)
+            
+            # when we use teacher forcing, output and target are not same dim
+            if len(outputs) > len(targets):
+                # padding with zeros (find better way)
+                new_targets = torch.ones(len(outputs), targets.shape[1], dtype=torch.long).to(device)
+                
+                new_targets[:len(targets)] = targets
+                targets = new_targets
+            elif len(outputs) < len(targets):
+                # dont know how else to do for now
+                targets = targets[:len(outputs)]
 
-    training_pairs, vocab_size, word2ix, ix2word = loadDataset()
-    encoder, decoder = loadModel(vocab_size)
-
-    print("Training the model ... ")
-    start = time.time()
-    plot_losses = []
-    print_loss_total = 0 # reset every print_every
-    plot_loss_total = 0  # reset every plot_every
-
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    criterion = nn.NLLLoss()
-
-    for iter in range(1, n_iters + 1):
-        training_pair = training_pairs[iter - 1]
-        input_variable = training_pair['input']
-        target_variable = training_pair['target']
-
-        input_variable = Variable(torch.LongTensor(input_variable).view(-1, 1))
-        target_variable = Variable(torch.LongTensor(target_variable).view(-1, 1))
-        if USE_CUDA:
-            input_variable = input_variable.cuda()
-            target_variable = target_variable.cuda()
-
-        print(input_variable)
-
-        loss = trainIter(input_variable, target_variable, encoder, decoder,
-                     encoder_optimizer, decoder_optimizer, criterion,
-                     max_length=max_length, teacher_forcing_ratio=teacher_forcing_ratio)
-        print_loss_total += loss
-        plot_loss_total += loss
-
-        # Keeping track of average loss and printing results on screen
-        if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (utils.timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
-
-        # Keeping track of average loss and plotting in figure
-        if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-
-            if min(plot_losses) == plot_loss_avg:
-                #we save this version of the model
-                torch.save(encoder.state_dict(), "encoder.ckpt")
-                torch.save(decoder.state_dict(), "decoder.ckpt")
-
-            plot_loss_total = 0
-
-    utils.showPlot(plot_losses)
-
-
-def trainIter(input_variable, target_variable, encoder, decoder,
-			  encoder_optimizer, decoder_optimizer, criterion,
-			  max_length=MAX_LENGTH, teacher_forcing_ratio=0.):
-
-	encoder_hidden = encoder.initHidden()
-
-	encoder_optimizer.zero_grad()
-	decoder_optimizer.zero_grad()
-
-	input_length = input_variable.size()[0]
-	target_length = target_variable.size()[0]
-
-	encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size))
-	if USE_CUDA:
-		encoder_outputs = encoder_outputs.cuda()
-
-	loss = 0
-
-	for ei in range(input_length):
-		encoder_output, encoder_hidden = encoder(input_variable[ei], encoder_hidden)
-		encoder_outputs[ei] = encoder_output[0][0]
-
-	decoder_input = Variable(torch.LongTensor([[BOS_TOKEN_id]]))
-	if USE_CUDA:
-		decoder_input = decoder_input.cuda()
-
-	decoder_hidden = encoder_hidden
-
-	use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-
-	if use_teacher_forcing:
-		# Teacher forcing : Feed the target as the next input
-		for di in range(target_length):
-			decoder_output, decoder_hidden, = decoder(decoder_input, decoder_hidden)
-			loss += criterion(decoder_output, target_variable[di])
-			decoder_input = target_variable[di] # Teacher forcing
-
-	else:
-		# Without teacher forcing : use its own predictions as the next input
-		for di in range(target_length):
-			decoder_output, decoder_hidden, = decoder(decoder_input, decoder_hidden)
-			topv, topi = decoder_output.data.topk(1)
-			ni = topi[0][0]
-
-			decoder_input = Variable(torch.LongTensor([[ni]]))
-			if USE_CUDA:
-				decoder_input = decoder_input.cuda()
-
-			loss += criterion(decoder_output, target_variable[di])
-			if ni == EOS_TOKEN_id:
-				break
-
-	loss.backward()
-
-	encoder_optimizer.step()
-	decoder_optimizer.step()
-
-	return loss.data[0] / target_length
-
+            loss = criterion(outputs.view(-1, outputs.shape[-1]), targets[:len(outputs)].view(-1))
+            
+            loss.backward()
+            optimizer.step()
+            
+            mean_epoch_loss += loss.item()
+            
+            if (batch_idx + 1) % print_every == 0:
+#             if True:
+            
+                print("Batch %d / %d ----- Loss : %.4f" % (batch_idx, len(dataset), loss.item()/len(targets)))
+                print('Q : ' + ''.join(id2word[str(pred.item())] + ' ' for pred in inputs.squeeze()))
+                print('A : ' + ''.join(id2word[str(pred.item())] + ' ' for pred in prediction.squeeze()))
+                
+                
+                loss_plot.append(mean_epoch_loss - prev_mean_epoch_loss)
+                prev_mean_epoch_loss = mean_epoch_loss
+#                 break
+            
+        plt.plot(np.array(loss_plot) / print_every, 'r')
+        plt.xlabel('number of examples')
+        plt.ylabel('Loss')
+        plt.savefig('loss.png')
+        plt.clf
+        np.savetxt('loss.csv', np.array(loss_plot) / print_every)
+            
+        mean_epoch_loss /= len(dataset)
+        print("Epoch %d ----- Loss : %.4f" % (epoch, mean_epoch_loss))
+        
+        if save_model:
+            torch.save(model.state_dict(), 'trained_model.pt')
+            
+            
+            
 if __name__ == "__main__":
+    
+    from preprocessing import loadDataset
+    import numpy as np
 
-    trainModel(print_every=10)
+    pairs, vocab_size, word2id, id2word = loadDataset()
+    np.random.shuffle(pairs)
+    
+    model = Seq2Seq(input_size=vocab_size,
+                    embedding_size=256,
+                    hidden_size=256,
+                    num_layers=5,
+                    teacher_forcing_prob=0.5).to(device)
+    train(model, pairs)

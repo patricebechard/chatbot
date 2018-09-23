@@ -13,7 +13,8 @@ import math
 
 import torch
 
-USE_CUDA = torch.cuda.is_available()
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# USE_CUDA = False
 
 def asMinutes(s):
     m = math.floor(s / 60)

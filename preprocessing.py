@@ -9,11 +9,6 @@ Preparing text data for seq2seq chatbot
 
 """
 
-from utils import USE_CUDA
-
-import torch
-from torch.autograd import Variable
-
 import re
 import unicodedata
 import json
@@ -191,4 +186,5 @@ def loadDataset(dataset_name='data/conversations.txt', generate_new=False):
 
 if __name__ == "__main__":
 
-    pairs, vocab_size, word2id, id2word = loadDataset(generate_new=True)
+    pairs, vocab_size, word2id, id2word = loadDataset()
+   
