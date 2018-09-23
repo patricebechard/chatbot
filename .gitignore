@@ -102,6 +102,7 @@ ENV/
 
 # custom documents
 data/
+!/data/conversations.txt
 not_really_working/
 *.pyc
 credentials
