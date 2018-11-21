@@ -110,3 +110,4 @@ credentials.json
 encoder.ckpt
 decoder.ckpt
 
+*.pt
